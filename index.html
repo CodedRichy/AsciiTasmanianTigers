@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@600&display=swap" rel="stylesheet">
 <style>
   html,body{margin:0;height:100%;background:#fff;overflow:hidden}
+  html.dark,html.dark body{background:#1f150c}
+  html.dark .cap{color:#f4ae52}
   canvas{display:block;width:100vw;height:100vh}
   .cap{position:fixed;left:16px;top:12px;margin:0;font:600 12px/1.5 "Geist Mono",ui-monospace,monospace;color:#8a7a62;letter-spacing:.02em;max-width:calc(100vw - 32px)}
   .cap a{color:inherit;text-decoration:underline;text-underline-offset:3px}
@@ -42,6 +44,9 @@ function noise1(x, s) {
 }
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
+const DARK = /theme=dark/.test(location.search) || window.THYLA_THEME === "dark";
+if (DARK) document.documentElement.classList.add("dark");
+const TH = (light, dark) => (DARK ? dark : light);   // one colour per theme
 const mix = (A, B, t) => `rgb(${Math.round(lerp(A[0], B[0], t))},${Math.round(lerp(A[1], B[1], t))},${Math.round(lerp(A[2], B[2], t))})`;
 
 function setFont() {
@@ -56,7 +61,7 @@ function buildScene() {
   bg.width = W * DPR; bg.height = H * DPR;
   const g = bg.getContext("2d");
   g.setTransform(DPR, 0, 0, DPR, 0, 0);
-  g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
+  g.fillStyle = TH("#fff", "#1f150c"); g.fillRect(0, 0, W, H);
   g.font = ctx.font; g.textAlign = "center"; g.textBaseline = "middle";
 
   const N = cols * rows;
@@ -69,8 +74,8 @@ function buildScene() {
   const sx = W * 0.74 / cw, sy = H * 0.2 / ch, sr = H * 0.065 / ch;
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const d = Math.hypot((c - sx) * cw, (r - sy) * ch) / (sr * ch);
-    if (d < 1) put(c, r, hash(c, r) < 0.5 ? ":" : "'", "rgb(236,184,104)");
-    else if (d < 1.9 && hash(c, r + 9) < 0.06) put(c, r, ".", "rgb(240,208,150)");
+    if (d < 1) put(c, r, hash(c, r) < 0.5 ? ":" : "'", TH("rgb(236,184,104)", "rgb(244,174,82)"));
+    else if (d < 1.9 && hash(c, r + 9) < 0.06) put(c, r, ".", TH("rgb(240,208,150)", "rgb(212,98,26)"));
   }
   // thin cloud streaks (drawn live, drifting)
   clouds = []; ground = []; canopy = [];
@@ -91,21 +96,21 @@ function buildScene() {
       const depth = clamp((r * ch - hy) / (H - hy), 0, 1);
       if (h < 0.05 + 0.14 * depth) {
         const gl = depth < 0.35 ? "." : depth < 0.7 ? (h < 0.1 ? "," : ".") : (h < 0.2 ? "," : h < 0.3 ? ";" : ".");
-        ground.push({ c, r, gl, col: mix([200, 188, 158], [150, 128, 92], depth), h });
+        ground.push({ c, r, gl, col: DARK ? mix([60, 52, 36], [98, 84, 56], depth) : mix([200, 188, 158], [150, 128, 92], depth), h });
       }
     } else if (r >= mid[c]) {                                // mid ridge edge
-      put(c, r, "_", "rgb(120,132,112)");
+      put(c, r, "_", TH("rgb(120,132,112)", "rgb(70,90,52)"));
     } else if (r > far[c]) {                                 // mid hills (fade with height)
       const f = (r - far[c]) / Math.max(1, mid[c] - far[c]);
-      if (h < 0.25 + 0.5 * f) put(c, r, ":", mix([196,206,196], [138,152,128], f));
+      if (h < 0.25 + 0.5 * f) put(c, r, ":", DARK ? mix([40,46,36], [62,78,48], f) : mix([196,206,196], [138,152,128], f));
     } else if (r === far[c]) {
-      put(c, r, "-", "rgb(176,188,196)");
+      put(c, r, "-", TH("rgb(176,188,196)", "rgb(72,62,44)"));
     }
-    if (r > far[c] - 1 && r < far[c] && h < 0.1) put(c, r, ".", "rgb(214,220,226)");
+    if (r > far[c] - 1 && r < far[c] && h < 0.1) put(c, r, ".", TH("rgb(214,220,226)", "rgb(58,48,34)"));
   }
   // far hills body (behind mid hills)
   for (let c = 0; c < cols; c++) for (let r = far[c] + 1; r < mid[c]; r++) {
-    if (GL[r * cols + c] === "" && hash(c + 5, r) < 0.18) put(c, r, ".", "rgb(196,206,212)");
+    if (GL[r * cols + c] === "" && hash(c + 5, r) < 0.18) put(c, r, ".", TH("rgb(196,206,212)", "rgb(50,42,30)"));
   }
 
   // eucalypts on the mid ridge: pale peeling trunks, sparse drooping canopy
@@ -117,7 +122,7 @@ function buildScene() {
     let x = tc;
     for (let i = 0; i < h; i++) {
       if (i > h * 0.35 && hash(k, i) < 0.25) x += hash(k, i + 99) < 0.5 ? -1 : 1;
-      put(x, base - i, i % 3 === 2 ? "!" : "|", i > h * 0.5 ? "rgb(150,140,124)" : "rgb(122,112,98)");
+      put(x, base - i, i % 3 === 2 ? "!" : "|", i > h * 0.5 ? TH("rgb(150,140,124)", "rgb(150,138,112)") : TH("rgb(122,112,98)", "rgb(118,104,82)"));
     }
     const topx = x, topy = base - h;
     const rx = 4 + Math.floor(hash(k, 80) * 4), ry = 2 + Math.floor(hash(k, 81) * 2);
@@ -125,13 +130,13 @@ function buildScene() {
       const e = (dx / rx) ** 2 + (dy / (ry + 1)) ** 2;
       if (e < 1 && hash(topx + dx + k * 13, topy + dy) < 0.5 - e * 0.3) {
         const hh = hash(dx + k, dy);
-        canopy.push({ c: topx + dx, r: topy + dy, gl: hh < 0.3 ? "%" : hh < 0.55 ? "&" : hh < 0.8 ? "*" : "\"", col: mix([138,158,118], [92,112,84], e), h: hh, e });
+        canopy.push({ c: topx + dx, r: topy + dy, gl: hh < 0.3 ? "%" : hh < 0.55 ? "&" : hh < 0.8 ? "*" : "\"", col: DARK ? mix([139,174,102], [80,108,56], e) : mix([138,158,118], [92,112,84], e), h: hh, e });
       }
     }
-    for (let b = 1; b < 4; b++) put(topx + (b % 2 ? b : -b), topy + 1 + b, "\\", "rgb(122,112,98)");
+    for (let b = 1; b < 4; b++) put(topx + (b % 2 ? b : -b), topy + 1 + b, "\\", TH("rgb(122,112,98)", "rgb(118,104,82)"));
   });
 
-  g.strokeStyle = "rgba(20,30,50,0.06)"; g.lineWidth = 1 / DPR; g.beginPath();
+  g.strokeStyle = TH("rgba(20,30,50,0.06)", "rgba(225,220,201,0.035)"); g.lineWidth = 1 / DPR; g.beginPath();
   for (let c = 0; c <= cols; c++) { g.moveTo(c * cw + 0.5 / DPR, 0); g.lineTo(c * cw + 0.5 / DPR, H); }
   for (let r = 0; r <= rows; r++) { g.moveTo(0, r * ch + 0.5 / DPR); g.lineTo(W, r * ch + 0.5 / DPR); }
   g.stroke();
@@ -173,8 +178,8 @@ const FIN_GLYPHS = "%;tS:";
 const RIDGE_GLYPHS = "@8%";
 const EDGE_HEAVY = ":;";
 const EDGE_LIGHT = ".',`";
-const STRIPE_C = "rgb(70,48,32)";           // dark brown, a step darker so it still separates from the darker coat
-const COAT_PALE = [234, 220, 192], COAT_DARK = [122, 92, 62];   // cream belly, greyer tawny back   // cream belly, warm tawny back   // greyish sandy-brown, matched darker to the live photos
+const STRIPE_C = TH("rgb(70,48,32)", "rgb(42,26,14)");           // dark brown, a step darker so it still separates from the darker coat
+const COAT_PALE = TH([234, 220, 192], [235, 213, 171]), COAT_DARK = TH([122, 92, 62], [150, 116, 76]);   // cream belly, greyer tawny back   // cream belly, warm tawny back   // greyish sandy-brown, matched darker to the live photos
 
 // Body, head, coat and stripes are one real film frame (Hobart Zoo, 1933), cut out
 // and stored as shading + stripe cells. The film has no usable stride at 240p, so
@@ -318,7 +323,7 @@ function drawAnimal(a) {
       if (!n) {
         const ex = (c * cw + cw / 2 - shX) / shW, ey = (r * ch + ch / 2 - gyS - 0.02 * unit) / shH;
         if (ex * ex + ey * ey < 1 && hh < 0.75) {
-          ctx.globalAlpha = 0.5; ctx.fillStyle = "rgb(170,160,140)";
+          ctx.globalAlpha = 0.5; ctx.fillStyle = TH("rgb(170,160,140)", "rgb(10,7,4)");
           ctx.fillText(ex * ex + ey * ey < 0.4 ? ":" : ".", c * cw + cw / 2, r * ch + ch / 2 + 1);
         }
         continue;
@@ -327,19 +332,19 @@ function drawAnimal(a) {
       const roll = hash(key, Math.floor(T * 2.4 + (key % 997) / 97));
       let gl, col, alpha = 1, tile = null;
       const mark = c * 4096 + r === eyeC || c * 4096 + r === noseC;
-      if (mark) { tile = "rgb(40,28,20)"; gl = "@"; col = "rgb(70,50,34)"; }
+      if (mark) { tile = TH("rgb(40,28,20)", "rgb(20,12,6)"); gl = "@"; col = TH("rgb(70,50,34)", "rgb(60,40,24)"); }
       else if (n <= 1) { continue; }
       else if (false) {
         const set = tone >= 0.45 ? EDGE_HEAVY : EDGE_LIGHT;
         gl = set[(key >>> 8) % set.length]; alpha = n === 2 ? 0.9 : 0.6;
         col = mix([150, 112, 74], [52, 36, 24], tone);
       } else if ((nl === 0 && n >= 3 && sset.has(c * 4096 + r)) || (ns >= 1 && nl === 0) || c * 4096 + r === eyeC || c * 4096 + r === noseC) {   // eye/nose/gape are smaller than a cell: one hit marks it   // stripe bar, or eye/nose mark
-        tile = STRIPE_C; gl = RIDGE_GLYPHS[(key >>> 8) % RIDGE_GLYPHS.length]; col = "rgb(92,66,46)";   // quiet glyph on the band: the band reads as one solid stroke
+        tile = STRIPE_C; gl = RIDGE_GLYPHS[(key >>> 8) % RIDGE_GLYPHS.length]; col = TH("rgb(92,66,46)", "rgb(65,45,21)");   // quiet glyph on the band: the band reads as one solid stroke
       } else {
         tile = mix(COAT_PALE, COAT_DARK, tone);
         gl = nl >= 2 ? FIN_GLYPHS[(key >>> 8) % FIN_GLYPHS.length]
                      : SKIN_RAMP[clamp(Math.floor(tone * 8.99) + (((key >>> 4) % 3) - 1), 0, SKIN_RAMP.length - 1)];
-        col = mix([184, 156, 120], [116, 84, 54], tone);   // glyph a step darker than its tile, not black: the coat stays mid so the stripes read
+        col = DARK ? mix([200, 176, 136], [110, 82, 50], tone) : mix([184, 156, 120], [116, 84, 54], tone);   // glyph a step darker than its tile, not black: the coat stays mid so the stripes read
         // (the sharks' accent re-roll is left off the animal: on a coat it reads as noise, per the critic)
       }
       if (far) alpha *= 0.85;
@@ -483,7 +488,7 @@ function drawClicks(t, dt) {
     if (e <= 0.1) continue;   // light ground: a lower floor than the sharks' dark water, or the trail never shows
     const lv = Math.min(WAKE_GL.length - 1, Math.floor(e * 3.2));
     ctx.globalAlpha = Math.min(1, 0.45 + e * 0.9);
-    ctx.fillStyle = mix([196, 160, 96], [118, 82, 38], lv / (WAKE_GL.length - 1));
+    ctx.fillStyle = DARK ? mix([212, 98, 26], [244, 174, 82], lv / (WAKE_GL.length - 1)) : mix([196, 160, 96], [118, 82, 38], lv / (WAKE_GL.length - 1));
     ctx.fillText(WAKE_GL[lv], (i % cols) * cw + cw / 2, ((i / cols) | 0) * ch + ch / 2 + 1);
   }
   ctx.globalAlpha = 1;
@@ -499,7 +504,8 @@ function drawTuft(tf, t) {
     for (let i = 0; i < hgt; i++) {
       const top = i === hgt - 1;
       const sx = c + off + (i > 0 ? Math.round((bend * i) / hgt) : 0);
-      ctx.fillStyle = top ? mix([150, 150, 90], [120, 120, 60], tf.d) : mix([150, 168, 120], [104, 130, 80], tf.d);
+      ctx.fillStyle = DARK ? (top ? mix([110, 120, 70], [139, 150, 90], tf.d) : mix([62, 82, 46], [98, 129, 65], tf.d))
+                     : top ? mix([150, 150, 90], [120, 120, 60], tf.d) : mix([150, 168, 120], [104, 130, 80], tf.d);
       ctx.fillText(top ? (lean > 0 ? "/" : lean < 0 ? "\\" : "'") : "|", sx * cw + cw / 2, (r - i) * ch + ch / 2 + 1);
     }
   }
@@ -509,7 +515,7 @@ function drawLive(t, dt) {
   // clouds drift with the wind
   for (const cl of clouds) {
     const x0 = ((cl.cx + t * cl.v * 0.9) % (cols + cl.len + 10)) - cl.len - 5;
-    ctx.fillStyle = "rgb(214,218,224)";
+    ctx.fillStyle = TH("rgb(214,218,224)", "rgb(70,58,40)");
     for (let i = 0; i < cl.len; i++) if (hash(i + cl.k * 50, cl.cy) < 0.7) {
       const c = Math.floor(x0 + i);
       if (c >= 0 && c < cols) ctx.fillText(hash(i, cl.k) < 0.5 ? "-" : "~", c * cw + cw / 2, cl.cy * ch + ch / 2 + 1);
@@ -519,7 +525,7 @@ function drawLive(t, dt) {
   const bp = (t % 24) / 24;
   if (bp < 0.55) {
     const bx = -40 + (bp / 0.55) * (W + 80), by = H * (0.16 + 0.04 * Math.sin(t * 0.5));
-    ctx.fillStyle = "rgb(112,112,116)";
+    ctx.fillStyle = TH("rgb(112,112,116)", "rgb(150,138,112)");
     [[0, 0], [-2.4, -1], [-2.2, 1], [-4.6, -1.6], [-5, 1.8]].forEach(([dx, dy], i) => {
       const c = Math.floor(bx / cw + dx), r = Math.floor(by / ch + dy + 0.3 * Math.sin(t * 2 + i));
       if (c >= 0 && c < cols) ctx.fillText(Math.sin(t * 9 + i * 1.7) > 0 ? "v" : "-", c * cw + cw / 2, r * ch + ch / 2 + 1);
@@ -536,11 +542,11 @@ function drawLive(t, dt) {
   for (const p of ground) {
     const g = gust(p.c * cw, t);
     const lit = p.h < (g - 0.7) * 0.45;
-    ctx.fillStyle = lit ? "rgb(206,176,112)" : p.col;
+    ctx.fillStyle = lit ? TH("rgb(206,176,112)", "rgb(244,174,82)") : p.col;
     ctx.fillText(lit ? (p.h < 0.05 ? "~" : "'") : p.gl, p.c * cw + cw / 2, p.r * ch + ch / 2 + 1);
   }
   // seed and dust motes carried by the wind
-  ctx.fillStyle = "rgb(160,132,88)";
+  ctx.fillStyle = TH("rgb(160,132,88)", "rgb(212,150,80)");
   for (const m of motes) {
     m.x += (14 + 70 * gust(m.x, t)) * m.v * dt;
     m.y += Math.sin(t * 1.6 + m.s) * 6 * dt;
