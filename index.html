@@ -357,7 +357,9 @@ function mk(id, gy, x, face) {
   return { id, gy, gyT: gy, hs: HS(gy), x, v: 0.8 + 0.08 * (id % 3), psi: face, face, sc: 1, dir: face ? -1 : 1,
     ph: id * 2, m: 1, hd: 0.06, mode: "walk", timer: 3 + id * 2.5, t: id * 5, turnT: 8 + id * 5, depthT: 4 + id * 2 };
 }
-const animals = [mk(1, 0.92, 0.35 * innerWidth, 0), mk(2, 0.74, 0.8 * innerWidth, Math.PI), mk(3, 0.64, 0.1 * innerWidth, 0)];
+const animals = [mk(1, 0.92, 0.35 * innerWidth, 0), mk(2, 0.72, 0.75 * innerWidth, Math.PI), mk(3, 0.74, 0.92 * innerWidth, Math.PI)];
+// the third is a half-grown young one: it left the pouch and now follows its mother (id 2)
+Object.assign(animals[2], { kid: 0.5, mom: 2, hs: HS(0.74) * 0.5 });
 // ?hero: one large animal pacing side-on, for comparing with reference photos
 if (location.search.includes("hero")) {
   animals.length = 1;
@@ -375,6 +377,19 @@ function update(a, dt) {
     else { a.mode = "walk"; a.timer = 6 + Math.random() * 9; }
   }
   const unit = a.hs * Math.min(H, W * 1.1), reach = 2.6 * unit;
+  const mom = a.mom && animals.find((o) => o.id === a.mom);
+  if (mom) {
+    // trail a little behind her and a touch nearer the viewer; copy what she does once caught up
+    const mu = mom.hs * Math.min(H, W * 1.1), md = Math.cos(mom.psi) >= 0 ? 1 : -1;
+    const dx = (mom.x - md * 2.3 * mu) - a.x, far = Math.abs(dx) > 0.5 * unit;
+    a.face = far ? (dx > 0 ? 0 : Math.PI) : mom.face;
+    a.gyT = clamp(mom.gy + 0.015, 0.62, 0.98);
+    a.mode = far || mom.mode === "walk" ? "walk" : mom.mode;
+    a.flee = Math.max(a.flee || 0, mom.flee || 0);
+    // same ground speed as her on screen, so its shorter legs step faster; hurry when left behind
+    a.v = mom.v * (mu / unit) * (far ? clamp(0.8 + Math.abs(dx) / (3 * unit), 1, 1.8) : 1);
+    a.timer = a.turnT = a.depthT = 1e9;
+  }
   // choose a direction: occasional about-face, and always turn back before the edges
   if (a.turnT <= 0) { a.face += Math.PI; a.turnT = 14 + Math.random() * 18; }
   const right = Math.cos(a.face) > 0;
@@ -383,7 +398,7 @@ function update(a, dt) {
   // pick a new depth to wander to, and keep clear of animals at the same depth
   if (a.depthT <= 0) { a.gyT = 0.62 + Math.random() * 0.34; a.depthT = 7 + Math.random() * 9; }
   for (const o of animals) {
-    if (o === a || Math.abs(o.gy - a.gy) > 0.24) continue;   // ~ the near animal's own height on screen
+    if (o === a || a.mom || o.mom === a.id || Math.abs(o.gy - a.gy) > 0.24) continue;   // mother and young walk together   // ~ the near animal's own height on screen
     const dx = o.x - a.x, near = Math.abs(dx) < 4.8 * unit;
     if (!near) continue;
     a.gyT = clamp(a.gy + (a.gy >= o.gy ? 0.18 : -0.18), 0.62, 0.96);
@@ -404,7 +419,7 @@ function update(a, dt) {
   a.sc = Math.max(0.75, Math.abs(cs));                  // foreshorten a little while turning; any narrower and it stops reading as an animal
   a.x += cs * a.v * boost * a.m * unit * dt;
   a.gy += clamp(a.gyT - a.gy, -0.02 * dt, 0.02 * dt) * (a.m > 0.2 ? 1 : 0) * 3;
-  a.hs = HS(a.gy);
+  a.hs = HS(a.gy) * (a.kid || 1);
   a.ph += (Math.abs(cs) * a.v * boost * a.m / STRIDE) * dt;     // gait cycles locked to ground covered: no foot sliding
 }
 
