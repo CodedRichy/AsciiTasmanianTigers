@@ -245,6 +245,21 @@ function drawAnimal(a) {
   a.tseed ??= Math.random() * 6.28;
   const TP = ROTO.tail, th0 = -0.03 * Math.cos(4 * Math.PI * cyc - 0.5) + 0.014 * Math.sin(2 * Math.PI * cyc + 0.4) + 0.008 * Math.sin(T * 0.8 + a.tseed), th1 = -0.028 * Math.cos(4 * Math.PI * cyc - 1.3) + 0.006 * Math.sin(T * 1.3 + a.tseed);
   const tailDY = TP ? (gx) => { const e = gx - TP[0]; if (e <= 0) return 0; const d = e / TP[2], w = Math.min(1, d / 0.18); return w * w * (3 - 2 * w) * e * (th0 + th1 * d); } : () => 0;
+  // live tail: a tapered capsule from the pivot, rotated by the gait (root fixed, tip lags a little)
+  let tailHit = () => -1;
+  if (ROTO.tailA) {
+    const [Px, Py, ta, L, RS] = ROTO.tailA, nR = RS.length - 1, ph0 = ta + th0, c0 = Math.cos(ph0), s0 = Math.sin(ph0);
+    tailHit = (gx, gy) => {
+      const dx = gx - Px, dy = gy - Py, u0 = dx * c0 + dy * s0;
+      if (u0 < 0 || u0 > L) return -1;
+      const ph = ph0 + th1 * (u0 / L), c = Math.cos(ph), s = Math.sin(ph), u = dx * c + dy * s, w = -dx * s + dy * c;
+      if (u < 0 || u > L) return -1;
+      const tt = u / L, f = tt * nR, i = Math.min(nR - 1, f | 0), r = RS[i] + (RS[i + 1] - RS[i]) * (f - i);
+      if (Math.abs(w) > r) return -1;
+      const tcd = w / Math.max(r, 1e-3);   // -1 top .. +1 underside
+      return clamp(0.40 + 0.18 * Math.max(-tcd, 0) - 0.12 * Math.max(tcd, 0) + 0.16 * tt ** 1.5, 0, 1);
+    };
+  }
   const legs = window.__noLegs ? [] : rigLegs(cyc, bob, (0.75 * cw) / (s * a.sc));   // >= 1.5 cells wide: distant legs stay joined
   const xA = ax - dir * (0 - ROTO.ax) * k, xB = ax - dir * (RW - ROTO.ax) * k;
   const c0 = Math.floor(Math.min(xA, xB) / cw), c1 = Math.ceil(Math.max(xA, xB) / cw);
@@ -290,10 +305,12 @@ function drawAnimal(a) {
         // the thigh is body: where it overlaps the trunk, the coat (and its rump stripes) shows through
         if (t >= 0 && THIGH) { const v0 = BODY[((gy - bob) | 0) * RW + (gx | 0)]; if (gx >= 0 && gx < RW && gy - bob >= 0 && v0 && v0 !== 255) t = -1; }
         if (t >= 0) { n++; nl++; sum += t; continue; }
-        const bx = gx | 0, by = (gy - bob - tailDY(gx)) | 0;
+        const bx = gx | 0, by = (gy - bob) | 0;
         const v = bx >= 0 && by >= 0 && bx < RW && by < RH ? BODY[by * RW + bx] : 0;
         if (v === 255) { n++; ns++; sum += 1; continue; }
         if (v) { n++; sum += (v - 1) / 190; continue; }
+        const tq = tailHit(gx, gy - bob);
+        if (tq >= 0) { n++; sum += tq; continue; }
         for (const L of legs) if (!L.near && (t = legTone(L, gx, gy)) >= 0) break;
         if (t >= 0) { n++; nfar++; sum += Math.min(1, t + 0.38); }
       }

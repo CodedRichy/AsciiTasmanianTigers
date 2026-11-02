@@ -72,12 +72,12 @@ def catmull(pts, closed=True, n=8):
 
 # ---------------------------------------------------------------- tail: stiff rod, thick for its first third
 # top edge continues the backline from the top of the rump: root centre = rump top - root radius
-TA, TLEN = math.radians(9), 1.30      # walking carriage, ~0.95-1.05 SH (critic C, measurements)
-TR0, TR1 = 0.10, 0.022
+TA, TLEN = math.radians(7), 1.12      # walking carriage, ~0.95-1.05 SH (critic C, measurements)
+TR0, TR1 = 0.11, 0.022
 T0 = (SQ(1.74), 0.951 - 0.05 - TR0)        # tail top edge starts at the croup top
 def tail_c(t):
     return (T0[0] + TLEN * t * math.cos(TA), T0[1] - TLEN * t * math.sin(TA))
-def tail_r(t): return (TR0 - 0.075 * np.asarray(t)) * np.minimum(1.0, (np.clip(1 - np.asarray(t), 0, 1) / 0.12) ** 0.6)   # ~5 rows at the root, steady taper, pointed tip
+def tail_r(t): return (TR0 - 0.085 * np.asarray(t)) * np.minimum(1.0, (np.clip(1 - np.asarray(t), 0, 1) / 0.12) ** 0.6)   # ~5 rows at the root, steady taper, pointed tip
 
 # ---------------------------------------------------------------- rasterise
 def raster(draw_fn):
@@ -98,7 +98,7 @@ cov_fe = raster(poly_fn([head_pt(u + 0.27, v - 0.05) for u, v in EAR_PTS + [(1.0
 cov_fe = cov_fe * 0
 cov_trunk = raster(poly_fn(catmull(trunk_poly)))
 cov_tail = raster(tail_fn)
-cov = np.clip(cov_head + cov_trunk + cov_tail, 0, 1)        # sum, not max: no sliver gaps where two shapes meet
+cov = np.clip(cov_head + cov_trunk, 0, 1)   # tail drawn live by the page (ROTO.tailA)        # sum, not max: no sliver gaps where two shapes meet
 M = cov >= 0.5
 
 # ---------------------------------------------------------------- coat tone (0 pale .. 1 dark)
@@ -202,7 +202,7 @@ for i, b in enumerate(bars):          # per-bar clearance to its nearest neighbo
         b.append(round(min(nb) * SHG, 2))
     else:
         b.append(round(0.08 * SHG, 2))
-meta = {"ntail": 3, "tail": [round(c, 2) for c in G(*T0)] + [round(TLEN * SHG, 2)], "eye": [round(c, 2) for c in G(*head_pt(ex, ey))], "nose": [round(c, 2) for c in G(*head_pt(0.025, 0.02))], "sgap": round((XS1 - XS0) / (N - 1), 4), "stripes": bars, "legs": legs, "w": W, "h": H, "ax": round(G(1.2, 0)[0], 2), "gy": GY, "sh": SHG,
+meta = {"tailA": [round(G(*T0)[0], 3), round(G(*T0)[1], 3), round(TA, 5), round(TLEN * SHG, 3), [round(float(tail_r(t)) * SHG, 3) for t in np.linspace(0, 1, 33)]], "ntail": 3, "tail": [round(c, 2) for c in G(*T0)] + [round(TLEN * SHG, 2)], "eye": [round(c, 2) for c in G(*head_pt(ex, ey))], "nose": [round(c, 2) for c in G(*head_pt(0.025, 0.02))], "sgap": round((XS1 - XS0) / (N - 1), 4), "stripes": bars, "legs": legs, "w": W, "h": H, "ax": round(G(1.2, 0)[0], 2), "gy": GY, "sh": SHG,
         "src": "drawn to a proportion sheet measured from ~25 reference images (live photos, mounts, skeletons)"}
 with open(DATA_JS, "w", encoding="utf-8") as fo:
     fo.write("// Thylacine drawn to a measured proportion sheet (live photos, museum mounts, skeletons).\n")
