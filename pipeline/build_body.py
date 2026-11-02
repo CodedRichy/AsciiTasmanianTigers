@@ -52,7 +52,7 @@ head_poly = [head_pt(u, v) for u, v in OUT]
 # nape dips behind the ears, rises to slightly low withers; backline climbs to a high, rounded rump
 SQ = lambda x: x if x < 0.72 else 0.72 + (x - 0.72) * 0.93   # trunk 12% shorter behind the shoulder (critic: 1.7x SH nose->tail root)
 top = [(0.40, 0.825), (0.47, 0.84), (0.55, 0.875), (0.63, 0.925), (0.70, 0.945), (0.82, 0.952), (0.92, 0.952), (1.12, 0.952),   # nape dips behind the ears, then rises to the withers
-       (1.35, 0.952), (1.50, 0.952), (1.62, 0.952), (1.72, 0.951), (1.82, 0.945), (1.90, 0.935)]   # croup rounds off into the tail
+       (1.35, 0.952), (1.50, 0.952), (1.62, 0.951), (1.70, 0.946), (1.78, 0.932), (1.86, 0.914), (1.92, 0.900)]   # croup rounds off into the tail
 rear = [(1.95, 0.84), (1.96, 0.75), (1.92, 0.64), (1.85, 0.55), (1.76, 0.50)]   # tail root widens into the buttock: no notch
 # deep chest (0.46 SH), loin tucked up to ~0.28 SH deep just before the stifle; throat notch under the jaw
 under = [(1.70, 0.50), (1.62, 0.56), (1.52, 0.70), (1.42, 0.725), (1.28, 0.68), (1.12, 0.57), (0.92, 0.495),
@@ -72,11 +72,11 @@ def catmull(pts, closed=True, n=8):
 
 # ---------------------------------------------------------------- tail: stiff rod, thick for its first third
 # top edge continues the backline from the top of the rump: root centre = rump top - root radius
-TA, TLEN = math.radians(13), 1.30      # walking carriage, ~0.95-1.05 SH (critic C, measurements)
+TA, TLEN = math.radians(9), 1.30      # walking carriage, ~0.95-1.05 SH (critic C, measurements)
 TR0, TR1 = 0.10, 0.022
 T0 = (SQ(1.74), 0.951 - 0.05 - TR0)        # tail top edge starts at the croup top
 def tail_c(t):
-    return (T0[0] + TLEN * t * math.cos(TA), T0[1] - TLEN * t * math.sin(TA) - 0.03 * t * t - 0.08 * max(0.0, t - 0.62) ** 2)
+    return (T0[0] + TLEN * t * math.cos(TA), T0[1] - TLEN * t * math.sin(TA))
 def tail_r(t): return (TR0 - 0.075 * np.asarray(t)) * np.minimum(1.0, (np.clip(1 - np.asarray(t), 0, 1) / 0.12) ** 0.6)   # ~5 rows at the root, steady taper, pointed tip
 
 # ---------------------------------------------------------------- rasterise
