@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ASCII Tasmanian tigers</title>
+<meta name="description" content="Thylacines walking through a windy eucalypt grassland, drawn in ASCII cells.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#fff;overflow:hidden}
+  canvas{display:block;width:100vw;height:100vh}
+  .cap{position:fixed;left:16px;top:12px;margin:0;font:600 12px/1.5 "Geist Mono",ui-monospace,monospace;color:#8a7a62;letter-spacing:.02em;max-width:calc(100vw - 32px)}
+  .cap a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+</style>
+</head>
+<body>
+<canvas id="c" aria-hidden="true"></canvas>
+<p class="cap">thylacine, <i>Thylacinus cynocephalus</i>. the last known one died in Hobart on 7 September 1936. tap the grass. <a href="https://github.com/CodedRichy/AsciiTasmanianTigers">source</a></p>
+<script src="roto-data.js"></script>
+<script>
+// ASCII thylacines walking through a windy eucalypt grassland. Cell renderer in the style of stackedlol/ascii-sharks.
+// Reference: ~60 cm shoulder height, long stiff tail, narrow head, 13-21 dark
+// stripes over the back and rump, stiff uneven gait, open eucalypt forest and
+// grassland (Tasmanian gov / Museums Victoria).
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+let W, H, DPR, FS, cw, ch, cols, rows, bg, tufts = [], clouds = [], ground = [], canopy = [], motes = [];
+// one wind for the whole field: a slow base sway plus gust fronts that roll left -> right (~10 s across)
+function gust(x, t) {
+  const front = Math.max(0, Math.sin((x / W) * 5.6 - t * 0.55)) ** 3;
+  return 0.25 + 0.15 * Math.sin(t * 0.9 + x * 0.004) + front;
+}
+
+function hash(a, b) {
+  let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263)) >>> 0;
+  h = (Math.imul(h ^ (h >>> 13), 1274126177)) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function noise1(x, s) {
+  const i = Math.floor(x), f = x - i, k = f * f * (3 - 2 * f);
+  return hash(i, s) * (1 - k) + hash(i + 1, s) * k;
+}
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const mix = (A, B, t) => `rgb(${Math.round(lerp(A[0], B[0], t))},${Math.round(lerp(A[1], B[1], t))},${Math.round(lerp(A[2], B[2], t))})`;
+
+function setFont() {
+  ctx.font = `600 ${FS}px "Geist Mono",ui-monospace,Menlo,monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+}
+
+// ------------------------------------------------------------ static scene
+function buildScene() {
+  bg = document.createElement("canvas");
+  bg.width = W * DPR; bg.height = H * DPR;
+  const g = bg.getContext("2d");
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
+  g.font = ctx.font; g.textAlign = "center"; g.textBaseline = "middle";
+
+  const N = cols * rows;
+  const GL = new Array(N).fill(""), CL = new Array(N).fill("");
+  const put = (c, r, gl, col) => { if (c >= 0 && c < cols && r >= 0 && r < rows) { GL[r * cols + c] = gl; CL[r * cols + c] = col; } };
+  const hy = H * 0.5;
+  const hr = hy / ch;
+
+  // sun: pale amber disc, sparse halo
+  const sx = W * 0.74 / cw, sy = H * 0.2 / ch, sr = H * 0.065 / ch;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const d = Math.hypot((c - sx) * cw, (r - sy) * ch) / (sr * ch);
+    if (d < 1) put(c, r, hash(c, r) < 0.5 ? ":" : "'", "rgb(236,184,104)");
+    else if (d < 1.9 && hash(c, r + 9) < 0.06) put(c, r, ".", "rgb(240,208,150)");
+  }
+  // thin cloud streaks (drawn live, drifting)
+  clouds = []; ground = []; canopy = [];
+  for (let k = 0; k < 6; k++) {
+    const cy = Math.floor((0.08 + hash(k, 3) * 0.26) * rows * 0.9), cx = Math.floor(hash(k, 4) * cols), len = 10 + Math.floor(hash(k, 5) * 26);
+    clouds.push({ cx, cy, len, k, v: 0.6 + hash(k, 6) * 0.8 });
+  }
+
+  // ridgelines (row index per column)
+  const far = [], mid = [];
+  for (let c = 0; c < cols; c++) {
+    far[c] = Math.floor(hr - rows * 0.11 * (0.2 + noise1(c * 0.02 + 3, 11) + 0.5 * noise1(c * 0.07, 12)));
+    mid[c] = Math.floor(hr + rows * 0.012 - rows * 0.085 * (noise1(c * 0.025 + 40, 21) + 0.4 * noise1(c * 0.09, 22)));
+  }
+  for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
+    const h = hash(c, r);
+    if (r >= mid[c] + 2) {                                   // ground
+      const depth = clamp((r * ch - hy) / (H - hy), 0, 1);
+      if (h < 0.05 + 0.14 * depth) {
+        const gl = depth < 0.35 ? "." : depth < 0.7 ? (h < 0.1 ? "," : ".") : (h < 0.2 ? "," : h < 0.3 ? ";" : ".");
+        ground.push({ c, r, gl, col: mix([200, 188, 158], [150, 128, 92], depth), h });
+      }
+    } else if (r >= mid[c]) {                                // mid ridge edge
+      put(c, r, "_", "rgb(120,132,112)");
+    } else if (r > far[c]) {                                 // mid hills (fade with height)
+      const f = (r - far[c]) / Math.max(1, mid[c] - far[c]);
+      if (h < 0.25 + 0.5 * f) put(c, r, ":", mix([196,206,196], [138,152,128], f));
+    } else if (r === far[c]) {
+      put(c, r, "-", "rgb(176,188,196)");
+    }
+    if (r > far[c] - 1 && r < far[c] && h < 0.1) put(c, r, ".", "rgb(214,220,226)");
+  }
+  // far hills body (behind mid hills)
+  for (let c = 0; c < cols; c++) for (let r = far[c] + 1; r < mid[c]; r++) {
+    if (GL[r * cols + c] === "" && hash(c + 5, r) < 0.18) put(c, r, ".", "rgb(196,206,212)");
+  }
+
+  // eucalypts on the mid ridge: pale peeling trunks, sparse drooping canopy
+  const trees = [];
+  for (let k = 0; k < Math.max(5, Math.floor(cols / 16)); k++) trees.push(Math.floor(hash(k, 77) * cols));
+  trees.forEach((tc, k) => {
+    const base = mid[clamp(tc, 0, cols - 1)] + 1;
+    const h = Math.floor(rows * (0.14 + 0.1 * hash(k, 78)));
+    let x = tc;
+    for (let i = 0; i < h; i++) {
+      if (i > h * 0.35 && hash(k, i) < 0.25) x += hash(k, i + 99) < 0.5 ? -1 : 1;
+      put(x, base - i, i % 3 === 2 ? "!" : "|", i > h * 0.5 ? "rgb(150,140,124)" : "rgb(122,112,98)");
+    }
+    const topx = x, topy = base - h;
+    const rx = 4 + Math.floor(hash(k, 80) * 4), ry = 2 + Math.floor(hash(k, 81) * 2);
+    for (let dy = -ry; dy <= ry + 2; dy++) for (let dx = -rx; dx <= rx; dx++) {
+      const e = (dx / rx) ** 2 + (dy / (ry + 1)) ** 2;
+      if (e < 1 && hash(topx + dx + k * 13, topy + dy) < 0.5 - e * 0.3) {
+        const hh = hash(dx + k, dy);
+        canopy.push({ c: topx + dx, r: topy + dy, gl: hh < 0.3 ? "%" : hh < 0.55 ? "&" : hh < 0.8 ? "*" : "\"", col: mix([138,158,118], [92,112,84], e), h: hh, e });
+      }
+    }
+    for (let b = 1; b < 4; b++) put(topx + (b % 2 ? b : -b), topy + 1 + b, "\\", "rgb(122,112,98)");
+  });
+
+  g.strokeStyle = "rgba(20,30,50,0.06)"; g.lineWidth = 1 / DPR; g.beginPath();
+  for (let c = 0; c <= cols; c++) { g.moveTo(c * cw + 0.5 / DPR, 0); g.lineTo(c * cw + 0.5 / DPR, H); }
+  for (let r = 0; r <= rows; r++) { g.moveTo(0, r * ch + 0.5 / DPR); g.lineTo(W, r * ch + 0.5 / DPR); }
+  g.stroke();
+  for (let i = 0; i < N; i++) if (GL[i]) {
+    g.fillStyle = CL[i];
+    g.fillText(GL[i], (i % cols) * cw + cw / 2, Math.floor(i / cols) * ch + ch / 2 + 1);
+  }
+
+  // dynamic grass tufts
+  tufts = [];
+  const nT = Math.floor((W * H) / 17000);
+  for (let i = 0; i < nT; i++) {
+    const y = hy + H * 0.08 + hash(i, 5) * (H * 0.9 - hy - H * 0.08 + 0);
+    const d = clamp((y - hy) / (H - hy), 0, 1);
+    tufts.push({ x: hash(i, 6) * W, y, h: Math.max(1, Math.round((1 + d * 2 + hash(i, 7) * 1.5) * (15 / ch))), d, s: hash(i, 8) * 6.28 });
+  }
+  tufts.sort((a, b) => a.y - b.y);
+  motes = [];
+  for (let i = 0; i < 70; i++) motes.push({ x: hash(i, 31) * W, y: hy + H * 0.04 + hash(i, 32) * (H - hy) * 0.85, s: hash(i, 33) * 6.28, v: 0.6 + hash(i, 34) * 0.8 });
+}
+
+function resize() {
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  // same cell metrics as the ascii-sharks renderer
+  cw = clamp(Math.round(W / 260), 5, 9); ch = Math.round(cw * 1.45); FS = Math.round(ch * 0.74);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  setFont();
+  cols = Math.ceil(W / cw) + 1; rows = Math.ceil(H / ch) + 1;
+  buildScene();
+}
+
+// ------------------------------------------------------------ thylacines
+// Glyph tables lifted from ascii-sharks (src/renderer.ts).
+const ACCENTS = ["#e0892c", "#e03a32", "#b44ae0", "#33c8cc", "#3cb54a", "#3150e8", "#d9c14a"];
+const SKIN_RAMP = ":;t%SX8#@";
+const FIN_GLYPHS = "%;tS:";
+const RIDGE_GLYPHS = "@8%";
+const EDGE_HEAVY = ":;";
+const EDGE_LIGHT = ".',`";
+const STRIPE_C = "rgb(70,48,32)";           // dark brown, a step darker so it still separates from the darker coat
+const COAT_PALE = [234, 220, 192], COAT_DARK = [122, 92, 62];   // cream belly, greyer tawny back   // cream belly, warm tawny back   // greyish sandy-brown, matched darker to the live photos
+
+// Body, head, coat and stripes are one real film frame (Hobart Zoo, 1933), cut out
+// and stored as shading + stripe cells. The film has no usable stride at 240p, so
+// the legs are a rig: a lateral-sequence walk (hind, fore, hind, fore) with each
+// paw pinned to the ground during stance and the knee/elbow solved by 2-bone IK.
+// Phase comes from distance walked, so a planted paw never slides.
+const BODY = Uint8Array.from(atob(ROTO.frames[0]), (c) => c.charCodeAt(0));
+const RW = ROTO.w, RH = ROTO.h, GYR = ROTO.gy;
+const STR_G = ROTO.sh * 0.36;         // body travel per gait cycle, grid px: paw travel ~0.46 SH, a walk not a lunge
+const STRIDE = STR_G / ROTO.sh;       // same, in shoulder heights
+const DUTY = 0.68, LIFT = ROTO.sh * 0.085, GU = ROTO.sh / 61;   // GU: grid units per old unit
+const SM = [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]];
+// leg specs in grid px. root = shoulder/hip, L = [upper, lower, foot], R = radii at root, joint, ankle, paw
+const LEGDEF = {
+  fore: { ...ROTO.legs.fore, back: 1, foot: 0 },
+  hind: { ...ROTO.legs.hind, back: -1, foot: 0.5 },
+};
+const LEGS = [  // draw order is decided per cell: near legs over the body, far legs under it
+  { def: LEGDEF.hind, off: 0.0, near: true }, { def: LEGDEF.fore, off: 0.25, near: true },
+  { def: LEGDEF.hind, off: 0.5, near: false }, { def: LEGDEF.fore, off: 0.75, near: false },
+];
+function ik(rx, ry, tx, ty, L1, L2, bendBack) {
+  let dx = tx - rx, dy = ty - ry, d = Math.hypot(dx, dy);
+  const dm = (L1 + L2) * 0.995; if (d > dm) { tx = rx + (dx * dm) / d; ty = ry + (dy * dm) / d; dx = tx - rx; dy = ty - ry; d = dm; }
+  const a = Math.acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1)), th = Math.atan2(dy, dx);
+  const j1 = [rx + L1 * Math.cos(th + a), ry + L1 * Math.sin(th + a)], j2 = [rx + L1 * Math.cos(th - a), ry + L1 * Math.sin(th - a)];
+  return (j1[0] > j2[0]) === (bendBack > 0) ? [j1, [tx, ty]] : [j2, [tx, ty]];   // +x is toward the tail
+}
+function rigLegs(ph, bob, rmin) {   // rmin: legs never thinner than ~1 cell on screen, so small animals stay joined
+  const out = [];
+  for (const lg of LEGS) {
+    const D = lg.def, p = (((ph + lg.off) % 1) + 1) % 1, A = DUTY * STR_G;
+    let fwd, lift = 0;
+    if (p < DUTY) fwd = A / 2 - (A * p) / DUTY;                                   // planted: slides back under the body
+    else { const w = (p - DUTY) / (1 - DUTY), e = w * w * (3 - 2 * w); fwd = -A / 2 + A * e; lift = LIFT * Math.sin(Math.PI * w); }
+    const far = lg.near ? 0 : 1;
+    const rx = D.root[0] + (D.foot ? 11 : 3) * GU * far, ry = D.root[1] + bob - 1.5 * GU * far;
+    const px = D.root[0] + (D.foot ? 11 : 3) * GU * far - fwd + (D.foot ? -1 : 4) * GU, py = GYR - D.R[3] - lift - 1.5 * GU * far;
+    // foot segment: fore = carpus, near vertical; hind = long hock, slanting back; both curl during swing
+    const lf = lift / LIFT, ang = D.foot ? 0.92 + 0.1 * lf : 0.08 + 0.3 * lf;
+    const ax = px + D.L[2] * Math.sin(ang), ay = py - D.L[2] * Math.cos(ang);
+    const [j, an] = ik(rx, ry, ax, ay, D.L[0], D.L[1], D.back);
+    out.push({ near: lg.near, hind: D.foot > 0, seg: [[rx, ry, j[0], j[1], D.R[0], Math.max(rmin, D.R[1]), 0.5], [j[0], j[1], an[0], an[1], Math.max(rmin, D.R[1]), Math.max(rmin, D.R[2]), 0.47], [an[0], an[1], px, py, Math.max(rmin, D.R[2]), Math.max(rmin, D.R[3]), 0.42], [px, py + D.R[3] * 0.3, px - D.R[3] * (D.foot ? 1.5 : 1.2), py + D.R[3] * 0.4, Math.max(rmin, D.R[3] * 0.9), Math.max(rmin * 0.8, D.R[3] * 0.6), 0.3]] });   // legs within a value step of the flank (r49, r58); short foot pad   // foot pad points forward (toward the head)   // pale paws (r35, r58)
+  }
+  for (const l of out) {               // bounding boxes for a cheap reject
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const s of l.seg) { x0 = Math.min(x0, s[0] - s[4], s[2] - s[5]); x1 = Math.max(x1, s[0] + s[4], s[2] + s[5]); y0 = Math.min(y0, s[1] - s[4], s[3] - s[5]); y1 = Math.max(y1, s[1] + s[4], s[3] + s[5]); }
+    l.bb = [x0, y0, x1, y1];
+  }
+  return out;
+}
+let THIGH = false;                     // set by legTone: the hit was a hind leg's upper segment
+function legTone(L, gx, gy) {         // tone of the first leg segment hit, or -1
+  if (gx < L.bb[0] || gx > L.bb[2] || gy < L.bb[1] || gy > L.bb[3]) return -1;
+  for (let i = 0; i < L.seg.length; i++) { const s = L.seg[i]; if (cap(gx, gy, s[0], s[1], s[2], s[3], s[4], s[5])) { THIGH = L.hind && i === 0; return s[6]; } }
+  return -1;
+}
+function cap(u, v, ax, ay, bx, by, r0, r1) {
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+  const t = L2 ? clamp(((u - ax) * dx + (v - ay) * dy) / L2, 0, 1) : 0;
+  const r = r0 + (r1 - r0) * t, ex = u - (ax + dx * t), ey = v - (ay + dy * t);
+  return ex * ex + ey * ey < r * r;
+}
+
+function drawAnimal(a) {
+  const unit = a.hs * Math.min(H, W * 1.1), s = unit / ROTO.sh, k = s * a.sc, gyS = a.gy * H, ax = a.x, dir = a.dir;
+  const cyc = ((a.ph % 1) + 1) % 1, bob = -0.9 * GU * Math.cos(4 * Math.PI * cyc);
+  a.tseed ??= Math.random() * 6.28;
+  const TP = ROTO.tail, th0 = 0.035 * Math.sin(4 * Math.PI * cyc - 0.6) + 0.03 * Math.sin(2 * Math.PI * cyc + 0.4) + 0.025 * Math.sin(T * 0.8 + a.tseed), th1 = 0.05 * Math.sin(4 * Math.PI * cyc - 1.7) + 0.02 * Math.sin(T * 1.3 + a.tseed);
+  const tailDY = TP ? (gx) => { const e = gx - TP[0]; if (e <= 0) return 0; const d = e / TP[2], w = Math.min(1, d / 0.12); return w * w * (3 - 2 * w) * e * (th0 + th1 * d); } : () => 0;
+  const legs = window.__noLegs ? [] : rigLegs(cyc, bob, (0.75 * cw) / (s * a.sc));   // >= 1.5 cells wide: distant legs stay joined
+  const xA = ax - dir * (0 - ROTO.ax) * k, xB = ax - dir * (RW - ROTO.ax) * k;
+  const c0 = Math.floor(Math.min(xA, xB) / cw), c1 = Math.ceil(Math.max(xA, xB) / cw);
+  const r0 = Math.floor((gyS - GYR * s) / ch), r1 = Math.ceil((gyS + 0.08 * unit) / ch);
+  // stripes: each photo stripe is a slanted line; snap it to exactly one cell per row (two if it is
+  // wide enough on screen) so neighbouring bars always keep a pale gap instead of merging
+  const sset = new Set();
+  const nBody = ROTO.stripes.filter((b) => !b[6]).length;
+  // stripe level of detail: bars are ~0.078 SH apart; when that is under ~1.8 cells on screen,
+  // neighbours would land in adjacent columns and read as one dark band, so keep every 2nd (or 3rd)
+  const gapPx = (ROTO.sgap || 0.078) * ROTO.sh * k, step = Math.max(1, Math.ceil((2.0 * cw) / gapPx));
+  ROTO.stripes.forEach(([xt, yt0, xb, yb0, wd, clr, onTail], i) => {
+    const dy = tailDY(xt), yt = yt0 + dy, yb = yb0 + dy;
+    if (false) { const rr = Math.floor((gyS - (GYR - (yt + yb) / 2 - bob) * s) / ch), cc = Math.floor((ax - dir * (xt - ROTO.ax) * k) / cw); sset.add(cc * 4096 + rr); if (wd * k > 1.2 * cw) sset.add((cc - dir) * 4096 + rr); return; }
+    if (yb - yt < 1 || (ROTO.stripes.length - 1 - i) % step) return;
+    const rA0 = Math.floor((gyS - (GYR - yt - bob) * s) / ch), rB0 = Math.floor((gyS - (GYR - yb - bob) * s) / ch);
+    if (rB0 - rA0 < 3) return;
+    const rA = Math.floor((gyS - (GYR - yt - bob) * s) / ch), rB = Math.floor((gyS - (GYR - yb - bob) * s) / ch);
+    for (let r = rA; r <= rB; r++) {
+      const gy = GYR - (gyS - (r * ch + ch / 2)) / s - bob;
+      if (gy < yt - 0.5 || gy > yb + 0.5) continue;
+      const gx = xt + ((xb - xt) * (gy - yt)) / (yb - yt), px = ax - dir * (gx - ROTO.ax) * k;
+      const c = Math.floor(px / cw);
+      sset.add(c * 4096 + r);
+      // wedge: two cells wide along the spine, tapering to one down the flank (only where a pale gap still fits)
+      // bold rump bands are 2 cells wide (front ones 1) whenever a pale gap still fits between them
+      if (false && (clr || 0) * k * step > 2.4 * cw) sset.add((c - dir) * 4096 + r)   /* second column always on the tail side: clean parallel bands, no zig-zag */;
+    }
+  });
+  const cellOf = (p) => { const px = ax - dir * (p[0] - ROTO.ax) * k, py = gyS - (GYR - p[1] - bob) * s; return Math.floor(px / cw) * 4096 + Math.floor(py / ch); };
+  const eyeC = ROTO.eye ? cellOf(ROTO.eye) : -1, noseC = ROTO.nose ? cellOf(ROTO.nose) : -1;
+  const shX = ax - dir * (RW * 0.5 - ROTO.ax) * k, shW = RW * 0.33 * k, shH = 0.07 * unit;
+  for (let r = r0; r <= r1; r++) {
+    if (r < 0 || r * ch > H) continue;
+    for (let c = c0; c <= c1; c++) {
+      if (c < 0 || c * cw > W) continue;
+      let n = 0, sum = 0, ns = 0, nl = 0, nfar = 0;
+      for (let q = 0; q < 4; q++) {
+        const px = c * cw + cw * SM[q][0], py = r * ch + ch * SM[q][1];
+        const gx = ROTO.ax - (dir * (px - ax)) / k, gy = GYR - (gyS - py) / s;
+        let t = -1;
+        for (const L of legs) if (L.near && (t = legTone(L, gx, gy)) >= 0) break;
+        // the thigh is body: where it overlaps the trunk, the coat (and its rump stripes) shows through
+        if (t >= 0 && THIGH) { const v0 = BODY[((gy - bob) | 0) * RW + (gx | 0)]; if (gx >= 0 && gx < RW && gy - bob >= 0 && v0 && v0 !== 255) t = -1; }
+        if (t >= 0) { n++; nl++; sum += t; continue; }
+        const bx = gx | 0, by = (gy - bob - tailDY(gx)) | 0;
+        const v = bx >= 0 && by >= 0 && bx < RW && by < RH ? BODY[by * RW + bx] : 0;
+        if (v === 255) { n++; ns++; sum += 1; continue; }
+        if (v) { n++; sum += (v - 1) / 190; continue; }
+        for (const L of legs) if (!L.near && (t = legTone(L, gx, gy)) >= 0) break;
+        if (t >= 0) { n++; nfar++; sum += Math.min(1, t + 0.38); }
+      }
+      const hh = hash(c, r), key = (hh * 1e9) >>> 0;
+      if (!n) {
+        const ex = (c * cw + cw / 2 - shX) / shW, ey = (r * ch + ch / 2 - gyS - 0.02 * unit) / shH;
+        if (ex * ex + ey * ey < 1 && hh < 0.75) {
+          ctx.globalAlpha = 0.5; ctx.fillStyle = "rgb(170,160,140)";
+          ctx.fillText(ex * ex + ey * ey < 0.4 ? ":" : ".", c * cw + cw / 2, r * ch + ch / 2 + 1);
+        }
+        continue;
+      }
+      const tone = 0.2 + 0.8 * (sum / n), far = nfar === n;     // floor keeps pale fur (snout, legs) visible on white
+      const roll = hash(key, Math.floor(T * 2.4 + (key % 997) / 97));
+      let gl, col, alpha = 1, tile = null;
+      const mark = c * 4096 + r === eyeC || c * 4096 + r === noseC;
+      if (mark) { tile = "rgb(40,28,20)"; gl = "@"; col = "rgb(70,50,34)"; }
+      else if (n <= 1) { continue; }
+      else if (false) {
+        const set = tone >= 0.45 ? EDGE_HEAVY : EDGE_LIGHT;
+        gl = set[(key >>> 8) % set.length]; alpha = n === 2 ? 0.9 : 0.6;
+        col = mix([150, 112, 74], [52, 36, 24], tone);
+      } else if ((nl === 0 && n >= 3 && sset.has(c * 4096 + r)) || (ns >= 1 && nl === 0) || c * 4096 + r === eyeC || c * 4096 + r === noseC) {   // eye/nose/gape are smaller than a cell: one hit marks it   // stripe bar, or eye/nose mark
+        tile = STRIPE_C; gl = RIDGE_GLYPHS[(key >>> 8) % RIDGE_GLYPHS.length]; col = "rgb(92,66,46)";   // quiet glyph on the band: the band reads as one solid stroke
+      } else {
+        tile = mix(COAT_PALE, COAT_DARK, tone);
+        gl = nl >= 2 ? FIN_GLYPHS[(key >>> 8) % FIN_GLYPHS.length]
+                     : SKIN_RAMP[clamp(Math.floor(tone * 8.99) + (((key >>> 4) % 3) - 1), 0, SKIN_RAMP.length - 1)];
+        col = mix([184, 156, 120], [116, 84, 54], tone);   // glyph a step darker than its tile, not black: the coat stays mid so the stripes read
+        // (the sharks' accent re-roll is left off the animal: on a coat it reads as noise, per the critic)
+      }
+      if (far) alpha *= 0.85;
+      if (tile) { ctx.globalAlpha = n === 2 ? 0.72 : 1; ctx.fillStyle = tile; ctx.fillRect(c * cw + 1, r * ch + 1, cw - 1, ch - 1); }
+      ctx.globalAlpha = n === 2 ? alpha * 0.72 : alpha; ctx.fillStyle = col;
+      ctx.fillText(gl, c * cw + cw / 2, r * ch + ch / 2 + 1);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+let HS_OVERRIDE = 0;
+const HS = (gy) => HS_OVERRIDE || 0.075 + (gy - 0.61) * 0.5;          // size from depth
+function mk(id, gy, x, face) {
+  return { id, gy, gyT: gy, hs: HS(gy), x, v: 0.8 + 0.08 * (id % 3), psi: face, face, sc: 1, dir: face ? -1 : 1,
+    ph: id * 2, m: 1, hd: 0.06, mode: "walk", timer: 3 + id * 2.5, t: id * 5, turnT: 8 + id * 5, depthT: 4 + id * 2 };
+}
+const animals = [mk(1, 0.92, 0.35 * innerWidth, 0), mk(2, 0.74, 0.8 * innerWidth, Math.PI), mk(3, 0.64, 0.1 * innerWidth, 0)];
+// ?hero: one large animal pacing side-on, for comparing with reference photos
+if (location.search.includes("hero")) {
+  animals.length = 1;
+  Object.assign(animals[0], { gy: 0.9, gyT: 0.9, depthT: 1e9, timer: 1e9 });
+  HS_OVERRIDE = 0.34;
+}
+
+function update(a, dt) {
+  a.t += dt;
+  if (a.flee > 0) a.flee -= dt;
+  const boost = 1 + 1.2 * Math.min(1, Math.max(0, a.flee || 0));
+  a.timer -= dt; a.turnT -= dt; a.depthT -= dt;
+  if (a.timer <= 0) {
+    if (a.mode === "walk") { a.mode = Math.random() < 0.6 ? "sniff" : "look"; a.timer = 2.5 + Math.random() * 3.5; }
+    else { a.mode = "walk"; a.timer = 6 + Math.random() * 9; }
+  }
+  const unit = a.hs * Math.min(H, W * 1.1), reach = 2.6 * unit;
+  // choose a direction: occasional about-face, and always turn back before the edges
+  if (a.turnT <= 0) { a.face += Math.PI; a.turnT = 14 + Math.random() * 18; }
+  const right = Math.cos(a.face) > 0;
+  if (right && a.x > W - reach * 0.6) { a.face = Math.PI; a.turnT = 10; }
+  if (!right && a.x < reach * 0.6) { a.face = 0; a.turnT = 10; }
+  // pick a new depth to wander to, and keep clear of animals at the same depth
+  if (a.depthT <= 0) { a.gyT = 0.62 + Math.random() * 0.34; a.depthT = 7 + Math.random() * 9; }
+  for (const o of animals) {
+    if (o === a || Math.abs(o.gy - a.gy) > 0.24) continue;   // ~ the near animal's own height on screen
+    const dx = o.x - a.x, near = Math.abs(dx) < 4.8 * unit;
+    if (!near) continue;
+    a.gyT = clamp(a.gy + (a.gy >= o.gy ? 0.18 : -0.18), 0.62, 0.96);
+    // heading into it at the same depth: the lower-id animal turns away rather than walk through
+    const toward = Math.cos(a.face) * dx > 0;
+    if (toward && a.id < o.id && Math.abs(dx) < 4 * unit) { a.face += Math.PI; a.turnT = 12; }
+  }
+  // swing the heading round to the target; slow down while turning
+  let d = ((a.face - a.psi + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+  const turning = Math.abs(d) > 0.15;
+  a.psi += clamp(d, -2.4 * dt, 2.4 * dt);
+  const go = a.mode === "walk" ? (turning ? 0.35 : 1) : 0;
+  a.m += (go - a.m) * Math.min(1, dt * 2.2);
+  const hdT = a.mode === "sniff" ? 0.42 + 0.08 * Math.sin(a.t * 3) : a.mode === "look" ? -0.1 : 0.06;
+  a.hd += (hdT - a.hd) * Math.min(1, dt * 2.5);
+  const cs = Math.cos(a.psi);
+  a.dir = cs >= 0 ? 1 : -1;
+  a.sc = Math.max(0.75, Math.abs(cs));                  // foreshorten a little while turning; any narrower and it stops reading as an animal
+  a.x += cs * a.v * boost * a.m * unit * dt;
+  a.gy += clamp(a.gyT - a.gy, -0.02 * dt, 0.02 * dt) * (a.m > 0.2 ? 1 : 0) * 3;
+  a.hs = HS(a.gy);
+  a.ph += (Math.abs(cs) * a.v * boost * a.m / STRIDE) * dt;     // gait cycles locked to ground covered: no foot sliding
+}
+
+// click / tap: a shock ring runs through the grass, dust kicks up, nearby thylacines bolt away
+const pulses = [], dust = [];
+const RM = matchMedia("(prefers-reduced-motion: reduce)");
+const PULSE_T = 1.4, ringR = (age) => 20 + age * Math.min(W, H) * 0.32;
+addEventListener("pointerdown", (e) => {
+  if (e.target.closest && e.target.closest("a")) return;
+  const x = e.clientX, y = e.clientY;
+  for (const a of animals) {
+    const u = a.hs * Math.min(H, W * 1.1), bx = a.x, by = a.gy * H - 0.6 * u;
+    if (Math.hypot(bx - x, (by - y) * 1.6) < 4.5 * u) {
+      a.face = bx >= x ? 0 : Math.PI; a.mode = "walk"; a.timer = 5 + Math.random() * 3; a.turnT = 8; a.flee = 2.6;
+    }
+  }
+  if (RM.matches) return;
+  pulses.push({ x, y, t0: T, seed: (Math.random() * 1e4) | 0 });
+  for (let i = 0; i < 26; i++) {
+    const an = Math.random() * 6.283, sp = 60 + Math.random() * 160;
+    dust.push({ x, y, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp * 0.5 - 40, life: 0.7 + Math.random() * 0.6, age: 0 });
+  }
+});
+function drawClicks(t, dt) {
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    const p = pulses[i], age = t - p.t0;
+    if (age > PULSE_T) { pulses.splice(i, 1); continue; }
+    const R = ringR(age), n = Math.max(12, Math.floor((2 * Math.PI * R) / cw));
+    ctx.globalAlpha = (1 - age / PULSE_T) * 0.9; ctx.fillStyle = "rgb(150,124,84)";
+    for (let j = 0; j < n; j++) {
+      if (hash(j, p.seed) < 0.25) continue;
+      const an = (j / n) * 6.283, c = Math.floor((p.x + Math.cos(an) * R) / cw), r = Math.floor((p.y + Math.sin(an) * R * 0.42) / ch);
+      ctx.fillText(age < 0.5 ? "~" : j % 3 ? "'" : ".", c * cw + cw / 2, r * ch + ch / 2 + 1);
+    }
+  }
+  ctx.fillStyle = "rgb(170,140,96)";
+  for (let i = dust.length - 1; i >= 0; i--) {
+    const q = dust[i]; q.age += dt;
+    if (q.age > q.life) { dust.splice(i, 1); continue; }
+    q.vx *= Math.exp(-3 * dt); q.vy = q.vy * Math.exp(-3 * dt) + 120 * dt; q.x += q.vx * dt; q.y += q.vy * dt;
+    ctx.globalAlpha = 1 - q.age / q.life;
+    ctx.fillText(q.age < 0.3 ? "*" : q.age < 0.6 ? "'" : ".", Math.floor(q.x / cw) * cw + cw / 2, Math.floor(q.y / ch) * ch + ch / 2 + 1);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawTuft(tf, t) {
+  const g = gust(tf.x, t) + 0.12 * Math.sin(t * 3.1 + tf.s);
+  let push = 0;
+  for (const p of pulses) { const age = t - p.t0, d = Math.hypot(tf.x - p.x, (tf.y - p.y) / 0.42), w = 1 - Math.abs(d - ringR(age)) / 50; if (w > 0) push += w * (1 - age / PULSE_T) * 3 * Math.sign(tf.x - p.x || 1); }
+  const bend = (g - 0.3) * 2.2 + push;                                   // -0.5 .. 2.5 cells at the tip
+  const lean = bend > 0.5 ? 1 : bend < -0.3 ? -1 : 0;
+  const c = Math.floor(tf.x / cw), r = Math.floor(tf.y / ch);
+  for (const off of [-1, 0, 1]) {
+    const hgt = Math.max(1, tf.h - (off ? 1 : 0));
+    for (let i = 0; i < hgt; i++) {
+      const top = i === hgt - 1;
+      const sx = c + off + (i > 0 ? Math.round((bend * i) / hgt) : 0);
+      ctx.fillStyle = top ? mix([150, 150, 90], [120, 120, 60], tf.d) : mix([150, 168, 120], [104, 130, 80], tf.d);
+      ctx.fillText(top ? (lean > 0 ? "/" : lean < 0 ? "\\" : "'") : "|", sx * cw + cw / 2, (r - i) * ch + ch / 2 + 1);
+    }
+  }
+}
+
+function drawLive(t, dt) {
+  // clouds drift with the wind
+  for (const cl of clouds) {
+    const x0 = ((cl.cx + t * cl.v * 0.9) % (cols + cl.len + 10)) - cl.len - 5;
+    ctx.fillStyle = "rgb(214,218,224)";
+    for (let i = 0; i < cl.len; i++) if (hash(i + cl.k * 50, cl.cy) < 0.7) {
+      const c = Math.floor(x0 + i);
+      if (c >= 0 && c < cols) ctx.fillText(hash(i, cl.k) < 0.5 ? "-" : "~", c * cw + cw / 2, cl.cy * ch + ch / 2 + 1);
+    }
+  }
+  // birds: a small loose flock crossing the sky every ~24 s
+  const bp = (t % 24) / 24;
+  if (bp < 0.55) {
+    const bx = -40 + (bp / 0.55) * (W + 80), by = H * (0.16 + 0.04 * Math.sin(t * 0.5));
+    ctx.fillStyle = "rgb(112,112,116)";
+    [[0, 0], [-2.4, -1], [-2.2, 1], [-4.6, -1.6], [-5, 1.8]].forEach(([dx, dy], i) => {
+      const c = Math.floor(bx / cw + dx), r = Math.floor(by / ch + dy + 0.3 * Math.sin(t * 2 + i));
+      if (c >= 0 && c < cols) ctx.fillText(Math.sin(t * 9 + i * 1.7) > 0 ? "v" : "-", c * cw + cw / 2, r * ch + ch / 2 + 1);
+    });
+  }
+  // eucalypt canopies rustle: outer leaves shift a cell and flip glyph under a gust
+  for (const p of canopy) {
+    const g = gust(p.c * cw, t);
+    const moved = p.e > 0.35 && p.h < (g - 0.45) * 0.9;
+    ctx.fillStyle = p.col;
+    ctx.fillText(moved ? (p.h < 0.4 ? "'" : "*") : p.gl, (p.c + (moved ? 1 : 0)) * cw + cw / 2, p.r * ch + ch / 2 + 1);
+  }
+  // dry grass ground: a pale sheen band travels with each gust front
+  for (const p of ground) {
+    const g = gust(p.c * cw, t);
+    const lit = p.h < (g - 0.7) * 0.45;
+    ctx.fillStyle = lit ? "rgb(206,176,112)" : p.col;
+    ctx.fillText(lit ? (p.h < 0.05 ? "~" : "'") : p.gl, p.c * cw + cw / 2, p.r * ch + ch / 2 + 1);
+  }
+  // seed and dust motes carried by the wind
+  ctx.fillStyle = "rgb(160,132,88)";
+  for (const m of motes) {
+    m.x += (14 + 70 * gust(m.x, t)) * m.v * dt;
+    m.y += Math.sin(t * 1.6 + m.s) * 6 * dt;
+    if (m.x > W + 10) { m.x = -10; m.y = H * 0.54 + hash(m.s * 100 | 0, t | 0) * H * 0.4; }
+    ctx.fillText(m.s < 2 ? "'" : ".", Math.floor(m.x / cw) * cw + cw / 2, Math.floor(m.y / ch) * ch + ch / 2 + 1);
+  }
+}
+
+let last = performance.now(), T = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
+  animals.forEach((a) => update(a, dt));
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(bg, 0, 0);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  setFont();
+  drawLive(T, dt);
+  drawClicks(T, dt);
+  // painter's order by ground line: tufts and animals interleave
+  const items = tufts.map((tf) => ({ y: tf.y, tf })).concat(animals.map((a) => ({ y: a.gy * H, a })));
+  items.sort((p, q) => p.y - q.y);
+  for (const it of items) it.a ? drawAnimal(it.a) : drawTuft(it.tf, T);
+  requestAnimationFrame(frame);
+}
+addEventListener("resize", resize);
+resize();
+requestAnimationFrame(frame);
+if (document.fonts) document.fonts.load('600 12px "Geist Mono"').then(resize).catch(() => {});
+</script>
+</body>
+</html>
