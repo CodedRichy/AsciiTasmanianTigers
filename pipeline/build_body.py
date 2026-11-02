@@ -72,12 +72,12 @@ def catmull(pts, closed=True, n=8):
 
 # ---------------------------------------------------------------- tail: stiff rod, thick for its first third
 # top edge continues the backline from the top of the rump: root centre = rump top - root radius
-TA, TLEN = math.radians(14), 1.30      # walking carriage, ~0.95-1.05 SH (critic C, measurements)
-TR0, TR1 = 0.165, 0.022
+TA, TLEN = math.radians(11), 1.30      # walking carriage, ~0.95-1.05 SH (critic C, measurements)
+TR0, TR1 = 0.10, 0.022
 T0 = (SQ(1.74), 0.951 - TR0)        # tail top edge starts at the croup top
 def tail_c(t):
     return (T0[0] + TLEN * t * math.cos(TA), T0[1] - TLEN * t * math.sin(TA) - 0.03 * t * t - 0.08 * max(0.0, t - 0.62) ** 2)
-def tail_r(t): return (0.032 + (TR0 - 0.032) * np.exp(-np.asarray(t) / 0.16)) * np.minimum(1.0, (np.clip(1 - np.asarray(t), 0, 1) / 0.12) ** 0.6)   # thick root, quick pinch, even rod, pointed tip
+def tail_r(t): return (TR0 - 0.075 * np.asarray(t)) * np.minimum(1.0, (np.clip(1 - np.asarray(t), 0, 1) / 0.12) ** 0.6)   # ~5 rows at the root, steady taper, pointed tip
 
 # ---------------------------------------------------------------- rasterise
 def raster(draw_fn):
@@ -185,7 +185,7 @@ for i in range(N):
 for tq in (0.13, 0.23, 0.33):
     (cx_, cy_), r_ = tail_c(tq), tail_r(tq)
     gx0, gy0 = G(cx_, cy_ + r_ - 0.01)
-    gx1, gy1 = G(cx_, cy_ - r_ * 0.2)
+    gx1, gy1 = G(cx_, cy_ - r_ * 0.8)
     bars.append([round(gx0, 2), round(gy0, 2), round(gx1, 2), round(gy1, 2), round(0.05 * SHG, 2)])
 
 # ---------------------------------------------------------------- rig (grid units)
