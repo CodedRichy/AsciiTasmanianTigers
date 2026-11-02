@@ -416,11 +416,11 @@ function drawClicks(t, dt) {
     const p = pulses[i], age = t - p.t0;
     if (age > PULSE_T) { pulses.splice(i, 1); continue; }
     const R = ringR(age), n = Math.max(12, Math.floor((2 * Math.PI * R) / cw));
-    ctx.globalAlpha = (1 - age / PULSE_T) * 0.9; ctx.fillStyle = "rgb(150,124,84)";
+    ctx.globalAlpha = Math.min(1, (1 - age / PULSE_T) * 1.4); ctx.fillStyle = "rgb(112,88,56)";
     for (let j = 0; j < n; j++) {
-      if (hash(j, p.seed) < 0.25) continue;
       const an = (j / n) * 6.283, c = Math.floor((p.x + Math.cos(an) * R) / cw), r = Math.floor((p.y + Math.sin(an) * R * 0.42) / ch);
       ctx.fillText(age < 0.5 ? "~" : j % 3 ? "'" : ".", c * cw + cw / 2, r * ch + ch / 2 + 1);
+      if (age < 0.8 && hash(j, p.seed) < 0.5) { const r2 = Math.floor((p.y + Math.sin(an) * (R - cw * 1.5) * 0.42) / ch), c2 = Math.floor((p.x + Math.cos(an) * (R - cw * 1.5)) / cw); ctx.fillText(",", c2 * cw + cw / 2, r2 * ch + ch / 2 + 1); }
     }
   }
   ctx.fillStyle = "rgb(170,140,96)";
