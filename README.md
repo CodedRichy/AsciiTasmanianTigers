@@ -24,7 +24,7 @@ Clicking the grass sends a flare through it that spreads and fades, the way asci
 
 Every round went to three critics working in parallel: an illustrator, a pixel-art director and a zoologist. A fix went in only when two of them asked for it. They disagreed often. One wanted shorter legs, another longer.
 
-Absolute scores stalled around 5 to 6 for six rounds. Switching the critics to score each round against the previous round's images broke the plateau. Round 24 averaged 7.1 out of 10.
+Absolute scores stalled around 5 to 6 for six rounds. Switching the critics to score each round against the previous round's images broke the plateau. Round 24 averaged 7.1 out of 10. Round 31 averaged 8.1, after the tail became a shape drawn fresh each frame.
 
 Things that looked right and were not:
 
