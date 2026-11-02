@@ -51,3 +51,7 @@ The capture scripts in `tools/` expect the page at `http://127.0.0.1:5199/index.
 ## Credit
 
 The cell style comes from [stackedlol/ascii-sharks](https://github.com/stackedlol/ascii-sharks) (MIT).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
