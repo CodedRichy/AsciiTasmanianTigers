@@ -261,11 +261,11 @@ function drawAnimal(a) {
     if (false) { const rr = Math.floor((gyS - (GYR - (yt + yb) / 2 - bob) * s) / ch), cc = Math.floor((ax - dir * (xt - ROTO.ax) * k) / cw); sset.add(cc * 4096 + rr); if (wd * k > 1.2 * cw) sset.add((cc - dir) * 4096 + rr); return; }
     if (yb - yt < 1 || (ROTO.stripes.length - 1 - i) % step) return;
     const rA0 = Math.floor((gyS - (GYR - yt - bob) * s) / ch), rB0 = Math.floor((gyS - (GYR - yb - bob) * s) / ch);
-    if (rB0 - rA0 < 3) return;
-    const rA = Math.floor((gyS - (GYR - yt - bob) * s) / ch), rB = Math.floor((gyS - (GYR - yb - bob) * s) / ch);
+    if (rB0 - rA0 < 3 && i < ROTO.stripes.length - (ROTO.ntail || 0)) return;   // body stripes need 4+ rows; tail-root bands may be short
+    const rA = Math.floor((gyS - (GYR - yt - bob) * s) / ch), rB = Math.max(Math.floor((gyS - (GYR - yb - bob) * s) / ch), i >= ROTO.stripes.length - (ROTO.ntail || 0) ? Math.floor((gyS - (GYR - yt - bob) * s) / ch) + 1 : -1);   // a tail band is never a lone dot
     for (let r = rA; r <= rB; r++) {
       const gy = GYR - (gyS - (r * ch + ch / 2)) / s - bob;
-      if (gy < yt - 0.5 || gy > yb + 0.5) continue;
+      if ((gy < yt - 0.5 || gy > yb + 0.5) && r > rA + 1) continue;
       const gx = xt + ((xb - xt) * (gy - yt)) / (yb - yt), px = ax - dir * (gx - ROTO.ax) * k;
       const c = Math.floor(px / cw);
       sset.add(c * 4096 + r);
@@ -391,10 +391,24 @@ function update(a, dt) {
   a.ph += (Math.abs(cs) * a.v * boost * a.m / STRIDE) * dt;     // gait cycles locked to ground covered: no foot sliding
 }
 
-// click / tap: a shock ring runs through the grass, dust kicks up, nearby thylacines bolt away
-const pulses = [], dust = [];
+// click / tap: a burst of energy in the grass that spreads and fades (the ascii-sharks wake idea);
+// the pointer and the walking animals leave faint trails in the same field; nearby thylacines bolt
+let energy = new Float32Array(0), energyTmp = new Float32Array(0);
+const ptr = { x: 0, y: 0, active: false };
 const RM = matchMedia("(prefers-reduced-motion: reduce)");
-const PULSE_T = 1.4, ringR = (age) => 20 + age * Math.min(W, H) * 0.32;
+function stamp(x, y, radius, amount) {
+  if (energy.length !== cols * rows) return;
+  const c0 = Math.floor(x / cw), r0 = Math.floor(y / ch);
+  for (let r = r0 - radius; r <= r0 + radius; r++) for (let c = c0 - radius; c <= c0 + radius; c++) {
+    if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
+    const d = Math.hypot(c - c0, (r - r0) * 1.4);
+    if (d > radius + 0.5) continue;
+    const i = r * cols + c;
+    energy[i] = Math.min(1.6, energy[i] + amount * (1 - d / (radius + 1)));
+  }
+}
+addEventListener("pointermove", (e) => { ptr.x = e.clientX; ptr.y = e.clientY; ptr.active = e.pointerType !== "touch"; }, { passive: true });
+document.documentElement.addEventListener("pointerleave", () => { ptr.active = false; });
 addEventListener("pointerdown", (e) => {
   if (e.target.closest && e.target.closest("a")) return;
   const x = e.clientX, y = e.clientY;
@@ -404,44 +418,39 @@ addEventListener("pointerdown", (e) => {
       a.face = bx >= x ? 0 : Math.PI; a.mode = "walk"; a.timer = 5 + Math.random() * 3; a.turnT = 8; a.flee = 2.6;
     }
   }
-  if (RM.matches) return;
-  // bounded work under click spam (an autoclicker): at most 6 live rings and 300 dust cells, oldest dropped first
-  pulses.push({ x, y, t0: T, seed: (Math.random() * 1e4) | 0 });
-  if (pulses.length > 6) pulses.splice(0, pulses.length - 6);
-  for (let i = 0; i < 26; i++) {
-    const an = Math.random() * 6.283, sp = 60 + Math.random() * 160;
-    dust.push({ x, y, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp * 0.5 - 40, life: 0.7 + Math.random() * 0.6, age: 0 });
-  }
-  if (dust.length > 300) dust.splice(0, dust.length - 300);
-});
+  if (!RM.matches) stamp(x, y, 7, 1.6);
+}, { passive: true });
+const WAKE_GL = [".", ":", "+", "*", "%"];
 function drawClicks(t, dt) {
-  for (let i = pulses.length - 1; i >= 0; i--) {
-    const p = pulses[i], age = t - p.t0;
-    if (age > PULSE_T) { pulses.splice(i, 1); continue; }
-    const R = ringR(age), n = Math.max(12, Math.floor((2 * Math.PI * R) / cw));
-    ctx.globalAlpha = Math.min(1, (1 - age / PULSE_T) * 1.4); ctx.fillStyle = "rgb(112,88,56)";
-    for (let j = 0; j < n; j++) {
-      const an = (j / n) * 6.283, c = Math.floor((p.x + Math.cos(an) * R) / cw), r = Math.floor((p.y + Math.sin(an) * R * 0.42) / ch);
-      ctx.fillText(age < 0.5 ? "~" : j % 3 ? "'" : ".", c * cw + cw / 2, r * ch + ch / 2 + 1);
-      if (age < 0.8 && hash(j, p.seed) < 0.5) { const r2 = Math.floor((p.y + Math.sin(an) * (R - cw * 1.5) * 0.42) / ch), c2 = Math.floor((p.x + Math.cos(an) * (R - cw * 1.5)) / cw); ctx.fillText(",", c2 * cw + cw / 2, r2 * ch + ch / 2 + 1); }
-    }
+  const n = cols * rows;
+  if (energy.length !== n) { energy = new Float32Array(n); energyTmp = new Float32Array(n); }
+  // deposits: pointer hover, and each walking animal's feet trample a faint trail
+  if (ptr.active) stamp(ptr.x, ptr.y, 1, 0.08);
+  for (const a of animals) if (a.mode === "walk" && a.m > 0.3) stamp(a.x, a.gy * H, 1, 0.02 + 0.03 * Math.min(1, a.flee || 0));
+  // blur + decay: the burst spreads out and fades
+  const decay = Math.exp(-dt * 1.5);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    const l = c > 0 ? energy[i - 1] : energy[i], rt = c < cols - 1 ? energy[i + 1] : energy[i];
+    const u = r > 0 ? energy[i - cols] : energy[i], d = r < rows - 1 ? energy[i + cols] : energy[i];
+    energyTmp[i] = (energy[i] * 4 + l + rt + u + d) * 0.125 * decay;
   }
-  ctx.fillStyle = "rgb(170,140,96)";
-  for (let i = dust.length - 1; i >= 0; i--) {
-    const q = dust[i]; q.age += dt;
-    if (q.age > q.life) { dust.splice(i, 1); continue; }
-    q.vx *= Math.exp(-3 * dt); q.vy = q.vy * Math.exp(-3 * dt) + 120 * dt; q.x += q.vx * dt; q.y += q.vy * dt;
-    ctx.globalAlpha = 1 - q.age / q.life;
-    ctx.fillText(q.age < 0.3 ? "*" : q.age < 0.6 ? "'" : ".", Math.floor(q.x / cw) * cw + cw / 2, Math.floor(q.y / ch) * ch + ch / 2 + 1);
+  const sw = energy; energy = energyTmp; energyTmp = sw;
+  // draw: strong cells flare as warm dry-grass glyphs
+  for (let i = 0; i < n; i++) {
+    const e = energy[i];
+    if (e <= 0.1) continue;   // light ground: a lower floor than the sharks' dark water, or the trail never shows
+    const lv = Math.min(WAKE_GL.length - 1, Math.floor(e * 3.2));
+    ctx.globalAlpha = Math.min(1, 0.45 + e * 0.9);
+    ctx.fillStyle = mix([196, 160, 96], [118, 82, 38], lv / (WAKE_GL.length - 1));
+    ctx.fillText(WAKE_GL[lv], (i % cols) * cw + cw / 2, ((i / cols) | 0) * ch + ch / 2 + 1);
   }
   ctx.globalAlpha = 1;
 }
 
 function drawTuft(tf, t) {
   const g = gust(tf.x, t) + 0.12 * Math.sin(t * 3.1 + tf.s);
-  let push = 0;
-  for (const p of pulses) { const age = t - p.t0, d = Math.hypot(tf.x - p.x, (tf.y - p.y) / 0.42), w = 1 - Math.abs(d - ringR(age)) / 50; if (w > 0) push += w * (1 - age / PULSE_T) * 3 * Math.sign(tf.x - p.x || 1); }
-  const bend = (g - 0.3) * 2.2 + push;                                   // -0.5 .. 2.5 cells at the tip
+  const bend = (g - 0.3) * 2.2;                                   // -0.5 .. 2.5 cells at the tip
   const lean = bend > 0.5 ? 1 : bend < -0.3 ? -1 : 0;
   const c = Math.floor(tf.x / cw), r = Math.floor(tf.y / ch);
   for (const off of [-1, 0, 1]) {

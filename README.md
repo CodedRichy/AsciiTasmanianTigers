@@ -16,6 +16,8 @@ The tail swings from its root in time with the gait and the tip lags a little. T
 
 The scene runs on one wind. Gust fronts roll across the field every ten seconds or so. The grass bends, a sheen crosses the dry ground, canopies rustle and seed drifts with it.
 
+Clicking the grass sends a flare through it that spreads and fades, the way ascii-sharks does with water. Any thylacine nearby bolts. The pointer and the animals' feet leave fainter trails in the same field.
+
 ![the full scene](docs/img/scene.png)
 
 ## How it got better

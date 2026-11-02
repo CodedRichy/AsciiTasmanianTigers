@@ -77,7 +77,7 @@ TR0, TR1 = 0.165, 0.022
 T0 = (SQ(1.74), 0.951 - TR0)        # tail top edge starts at the croup top
 def tail_c(t):
     return (T0[0] + TLEN * t * math.cos(TA), T0[1] - TLEN * t * math.sin(TA) - 0.03 * t * t - 0.08 * max(0.0, t - 0.62) ** 2)
-def tail_r(t): return TR0 + (TR1 - TR0) * t     # even taper to a blunt tip
+def tail_r(t): return (0.032 + (TR0 - 0.032) * np.exp(-np.asarray(t) / 0.16)) * np.minimum(1.0, (np.clip(1 - np.asarray(t), 0, 1) / 0.12) ** 0.6)   # thick root, quick pinch, even rod, pointed tip
 
 # ---------------------------------------------------------------- rasterise
 def raster(draw_fn):
@@ -154,7 +154,7 @@ for (u0, v0), (u1, v1) in zip(ml, ml[1:]):
 XS0, XS1 = SQ(1.30), SQ(1.84)            # stripe span (also used for the bars below)
 zw = sm(XS0 - 0.12, XS0 + 0.05, xs) * (1 - sm(XS1 + 0.05, XS1 + 0.2, xs)) * sm(0.25, 0.5, d) * (1 - 0.5 * sm(0.80, 1.0, d)) * (cov_trunk >= 0.5) * ~inT   # soft-edged
 v = np.where((v > 0) & (v < 255), np.maximum(1, np.round(v - 60 * zw)).astype(np.int32), v)
-v[gape & M] = 165                                         # mouth line: dark, runs to below the eye
+v[gape & M] = 191                                         # mouth line: dark, runs to below the eye
 # eye and nose are placed by the renderer as exactly one cell each (meta eye/nose): never two, never lost
 v[~M] = 0
 
@@ -202,7 +202,7 @@ for i, b in enumerate(bars):          # per-bar clearance to its nearest neighbo
         b.append(round(min(nb) * SHG, 2))
     else:
         b.append(round(0.08 * SHG, 2))
-meta = {"tail": [round(c, 2) for c in G(*T0)] + [round(TLEN * SHG, 2)], "eye": [round(c, 2) for c in G(*head_pt(ex, ey))], "nose": [round(c, 2) for c in G(*head_pt(0.025, 0.02))], "sgap": round((XS1 - XS0) / (N - 1), 4), "stripes": bars, "legs": legs, "w": W, "h": H, "ax": round(G(1.2, 0)[0], 2), "gy": GY, "sh": SHG,
+meta = {"ntail": 3, "tail": [round(c, 2) for c in G(*T0)] + [round(TLEN * SHG, 2)], "eye": [round(c, 2) for c in G(*head_pt(ex, ey))], "nose": [round(c, 2) for c in G(*head_pt(0.025, 0.02))], "sgap": round((XS1 - XS0) / (N - 1), 4), "stripes": bars, "legs": legs, "w": W, "h": H, "ax": round(G(1.2, 0)[0], 2), "gy": GY, "sh": SHG,
         "src": "drawn to a proportion sheet measured from ~25 reference images (live photos, mounts, skeletons)"}
 with open(DATA_JS, "w", encoding="utf-8") as fo:
     fo.write("// Thylacine drawn to a measured proportion sheet (live photos, museum mounts, skeletons).\n")
