@@ -378,23 +378,32 @@ function update(a, dt) {
   }
   const unit = a.hs * Math.min(H, W * 1.1), reach = 2.6 * unit;
   const mom = a.mom && animals.find((o) => o.id === a.mom);
+  if (!a.mom) { a.v0 ??= a.v; a.v = a.v0 * (1 + 0.12 * Math.sin(a.t * 0.21 + a.id * 2) + 0.05 * Math.sin(a.t * 0.67 + a.id)); }
   if (mom) {
-    // trail a little behind her and a touch nearer the viewer; copy what she does once caught up
-    const mu = mom.hs * Math.min(H, W * 1.1), md = Math.cos(mom.psi) >= 0 ? 1 : -1;
-    const dx = (mom.x - md * 2.3 * mu) - a.x, far = Math.abs(dx) > 0.5 * unit;
-    a.face = far ? (dx > 0 ? 0 : Math.PI) : mom.face;
-    a.gyT = clamp(mom.gy + 0.015, 0.62, 0.98);
-    a.mode = far || mom.mode === "walk" ? "walk" : mom.mode;
+    // keep station just behind her hip, a touch nearer the viewer. It always faces the way she faces:
+    // left behind, it hurries; caught ahead after she turns, it waits for her to pass; otherwise it copies her
+    const mu = mom.hs * Math.min(H, W * 1.1), md = Math.cos(mom.face) >= 0 ? 1 : -1;
+    const lag = ((mom.x - md * 1.5 * mu) - a.x) * md;          // > 0: it has fallen behind its spot; < 0: it is ahead of her
+    a.face = mom.face;
+    a.gyT = clamp(mom.gy + 0.035, 0.62, 0.98);   // walks on her near side, clear of her legs
     a.flee = Math.max(a.flee || 0, mom.flee || 0);
-    // same ground speed as her on screen, so its shorter legs step faster; hurry when left behind
-    a.v = mom.v * (mu / unit) * (far ? clamp(0.8 + Math.abs(dx) / (3 * unit), 1, 1.8) : 1);
+    const match = mom.v * (mu / unit);                           // her ground speed: shorter legs step faster
+    const pace = clamp(1 + lag / (3 * unit), 0.35, 1.7);         // ahead: dawdles so she overtakes; behind: trots to catch up
+    a.dd = (a.dd ?? 5 + Math.random() * 5) - dt;
+    if (a.dd < -1.5 - Math.random() * 1.5) a.dd = 6 + Math.random() * 8;
+    a.catch = lag > (a.catch ? 0.2 : 0.6) * unit;
+    if (a.flee > 0 || (mom.mode === "walk" && !(a.dd < 0 && lag < 1.5 * unit))) { a.mode = "walk"; a.v = match * pace; }
+    else if (mom.mode === "walk") { a.mode = "sniff"; a.v = match; }         // stops to nose at something, then catches up
+    else if (a.catch) { a.mode = "walk"; a.v = match * Math.max(1, pace); } // she has stopped: close the gap first
+    else { a.mode = mom.mode === "sniff" && lag < 0 ? "look" : mom.mode; a.v = match; }
+    a.vs = (a.vs ?? a.v) + (a.v - (a.vs ?? a.v)) * Math.min(1, dt * 1.5); a.v = a.vs;   // no sudden changes of pace
     a.timer = a.turnT = a.depthT = 1e9;
   }
   // choose a direction: occasional about-face, and always turn back before the edges
   if (a.turnT <= 0) { a.face += Math.PI; a.turnT = 14 + Math.random() * 18; }
   const right = Math.cos(a.face) > 0;
-  if (right && a.x > W - reach * 0.6) { a.face = Math.PI; a.turnT = 10; }
-  if (!right && a.x < reach * 0.6) { a.face = 0; a.turnT = 10; }
+  if (!mom && right && a.x > W - reach * 0.6) { a.face = Math.PI; a.turnT = 10; }
+  if (!mom && !right && a.x < reach * 0.6) { a.face = 0; a.turnT = 10; }
   // pick a new depth to wander to, and keep clear of animals at the same depth
   if (a.depthT <= 0) { a.gyT = 0.62 + Math.random() * 0.34; a.depthT = 7 + Math.random() * 9; }
   for (const o of animals) {
