@@ -243,8 +243,8 @@ function drawAnimal(a) {
   const unit = a.hs * Math.min(H, W * 1.1), s = unit / ROTO.sh, k = s * a.sc, gyS = a.gy * H, ax = a.x, dir = a.dir;
   const cyc = ((a.ph % 1) + 1) % 1, bob = -0.9 * GU * Math.cos(4 * Math.PI * cyc);
   a.tseed ??= Math.random() * 6.28;
-  const TP = ROTO.tail, th0 = 0.035 * Math.sin(4 * Math.PI * cyc - 0.6) + 0.03 * Math.sin(2 * Math.PI * cyc + 0.4) + 0.025 * Math.sin(T * 0.8 + a.tseed), th1 = 0.05 * Math.sin(4 * Math.PI * cyc - 1.7) + 0.02 * Math.sin(T * 1.3 + a.tseed);
-  const tailDY = TP ? (gx) => { const e = gx - TP[0]; if (e <= 0) return 0; const d = e / TP[2], w = Math.min(1, d / 0.12); return w * w * (3 - 2 * w) * e * (th0 + th1 * d); } : () => 0;
+  const TP = ROTO.tail, th0 = -0.022 * Math.cos(4 * Math.PI * cyc - 0.5) + 0.012 * Math.sin(2 * Math.PI * cyc + 0.4) + 0.008 * Math.sin(T * 0.8 + a.tseed), th1 = -0.02 * Math.cos(4 * Math.PI * cyc - 1.3) + 0.006 * Math.sin(T * 1.3 + a.tseed);
+  const tailDY = TP ? (gx) => { const e = gx - TP[0]; if (e <= 0) return 0; const d = e / TP[2], w = Math.min(1, d / 0.18); return w * w * (3 - 2 * w) * e * (th0 + th1 * d); } : () => 0;
   const legs = window.__noLegs ? [] : rigLegs(cyc, bob, (0.75 * cw) / (s * a.sc));   // >= 1.5 cells wide: distant legs stay joined
   const xA = ax - dir * (0 - ROTO.ax) * k, xB = ax - dir * (RW - ROTO.ax) * k;
   const c0 = Math.floor(Math.min(xA, xB) / cw), c1 = Math.ceil(Math.max(xA, xB) / cw);
@@ -405,11 +405,14 @@ addEventListener("pointerdown", (e) => {
     }
   }
   if (RM.matches) return;
+  // bounded work under click spam (an autoclicker): at most 6 live rings and 300 dust cells, oldest dropped first
   pulses.push({ x, y, t0: T, seed: (Math.random() * 1e4) | 0 });
+  if (pulses.length > 6) pulses.splice(0, pulses.length - 6);
   for (let i = 0; i < 26; i++) {
     const an = Math.random() * 6.283, sp = 60 + Math.random() * 160;
     dust.push({ x, y, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp * 0.5 - 40, life: 0.7 + Math.random() * 0.6, age: 0 });
   }
+  if (dust.length > 300) dust.splice(0, dust.length - 300);
 });
 function drawClicks(t, dt) {
   for (let i = pulses.length - 1; i >= 0; i--) {

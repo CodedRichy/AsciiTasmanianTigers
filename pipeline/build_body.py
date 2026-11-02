@@ -72,8 +72,8 @@ def catmull(pts, closed=True, n=8):
 
 # ---------------------------------------------------------------- tail: stiff rod, thick for its first third
 # top edge continues the backline from the top of the rump: root centre = rump top - root radius
-TA, TLEN = math.radians(11), 1.30      # walking carriage, ~0.95-1.05 SH (critic C, measurements)
-TR0, TR1 = 0.165, 0.006
+TA, TLEN = math.radians(14), 1.30      # walking carriage, ~0.95-1.05 SH (critic C, measurements)
+TR0, TR1 = 0.165, 0.022
 T0 = (SQ(1.74), 0.951 - TR0)        # tail top edge starts at the croup top
 def tail_c(t):
     return (T0[0] + TLEN * t * math.cos(TA), T0[1] - TLEN * t * math.sin(TA) - 0.03 * t * t - 0.08 * max(0.0, t - 0.62) ** 2)
